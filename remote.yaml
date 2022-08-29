@@ -1,0 +1,525 @@
+esphome:
+  name: remote
+  platform: ESP8266
+  board: d1_mini
+
+# Enable logging
+logger:
+  level: DEBUG
+
+# Enable Home Assistant API
+#api:
+#  password: ""
+  
+ota:
+  password: "a69350c1995f07a97cc3bda52ac9aaea"
+
+wifi:
+  ssid: "LMV19"
+  password: "NorfWiks"
+  manual_ip:
+    # Set this to the IP of the ESP
+    static_ip: 192.168.68.100
+    # Set this to the IP address of the router. Often ends with .1
+    gateway: 192.168.68.1
+    # The subnet of the network. 255.255.255.0 works for most home networks.
+    subnet: 255.255.255.0
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Remote Fallback Hotspot"
+    password: "GS4dOdVr7XYd"
+
+captive_portal:
+
+switch:
+  - platform: restart
+    name: "Living Room Remote Restart"
+
+binary_sensor:
+  - platform: status
+    name: "Remote Status"
+  - platform: template
+    name: Living Room Reciever Power
+    id: ir_template_reciever_power
+    device_class: power
+  - platform: template
+    name: Living Room TV Power
+    id: ir_template_tv_power
+    device_class: power
+  - platform: template
+    name: Living Room Box Power
+    id: ir_template_box_power
+    device_class: power
+  - platform: template
+    name: Increasing volume
+    id: ir_template_increasing_volume
+    internal: true
+  - platform: template
+    name: Decreasing volume
+    id: ir_template_decreasing_volume
+    internal: true
+
+text_sensor:
+  - platform: template
+    name: "Living Room Reciever Source"
+    id: ir_template_reciever_source
+    icon: "mdi:login-variant"
+
+#remote_receiver:
+#  pin:
+#    number: D5
+#    inverted: true
+#    mode:
+#      input: true
+#      pullup: true
+#  dump: all
+#  idle: 25ms
+
+remote_transmitter:
+  pin: D2
+  carrier_duty_percent: 50%
+
+mqtt:
+  broker: 192.168.68.121
+  username: hassio
+  password: Vitsippsv3
+  reboot_timeout: 1min
+
+  on_message:
+    - topic: livingroom/ir_transmitter/preset/scene
+      payload: power_off
+      then:
+        - if:
+            condition:
+              binary_sensor.is_on: ir_template_reciever_power
+            then:
+              #Turn Recieve OFF
+              - text_sensor.template.publish:
+                  id: ir_template_reciever_source
+                  state: 'NONE'
+              - remote_transmitter.transmit_nec:
+                  address: 0x817E
+                  command: 0xD52A
+              - binary_sensor.template.publish:
+                  id: ir_template_reciever_power
+                  state: OFF
+        - if:
+            condition:
+              binary_sensor.is_on: ir_template_tv_power
+            then:
+              - delay: 1s
+              #Turn TV OFF
+              - remote_transmitter.transmit_lg:
+                  data: 0x20DF10EF
+                  nbits: 32
+              - binary_sensor.template.publish:
+                  id: ir_template_tv_power
+                  state: OFF
+        - if:
+            condition:
+              binary_sensor.is_on: ir_template_box_power
+            then:
+              - delay: 2s
+              #Turn Box OFF
+              - remote_transmitter.transmit_raw:
+                  carrier_frequency: 38kHz
+                  code: [411, -278, 118, -321, 118, -651, 120, -321, 118, -652, 118, -818, 119, -817, 120, -319, 120, -321, 118, -322, 118, -651, 119, -487, 119, -818, 119, -320, 119, -322, 118, -816, 121, -319, 120]
+              - binary_sensor.template.publish:
+                  id: ir_template_box_power
+                  state: OFF
+    - topic: livingroom/ir_transmitter/preset/scene
+      payload: tv
+      then:
+        - if:
+            condition:
+              binary_sensor.is_off: ir_template_tv_power
+            then:
+              #Turn TV on
+              - remote_transmitter.transmit_lg:
+                  data: 0x20DF10EF
+                  nbits: 32
+              - binary_sensor.template.publish:
+                  id: ir_template_tv_power
+                  state: ON
+        - if:
+            condition:
+              binary_sensor.is_off: ir_template_reciever_power
+            then:
+              - delay: 1s
+              #Turn Recieve ON
+              - remote_transmitter.transmit_nec:
+                  address: 0x817E
+                  command: 0xD52A
+              - binary_sensor.template.publish:
+                  id: ir_template_reciever_power
+                  state: ON
+              - delay: 1s
+              #Switch to HDMI3 (BOX)
+              - remote_transmitter.transmit_nec:
+                  address: 0x857A
+                  command: 0x324D
+              - text_sensor.template.publish:
+                  id: ir_template_reciever_source
+                  state: 'TV'
+            else:
+              #Switch to HDMI3 (BOX)
+              - remote_transmitter.transmit_nec:
+                  address: 0x857A
+                  command: 0x324D
+              - text_sensor.template.publish:
+                  id: ir_template_reciever_source
+                  state: 'TV'
+        - if:
+            condition:
+              binary_sensor.is_off: ir_template_box_power
+            then:
+              - delay: 2s
+              #Turn Box on
+              - remote_transmitter.transmit_raw:
+                  carrier_frequency: 38kHz
+                  code: [411, -278, 118, -321, 118, -651, 120, -321, 118, -652, 118, -818, 119, -817, 120, -319, 120, -321, 118, -322, 118, -651, 119, -487, 119, -818, 119, -320, 119, -322, 118, -816, 121, -319, 120]
+              - binary_sensor.template.publish:
+                  id: ir_template_box_power
+                  state: ON                 
+    - topic: livingroom/ir_transmitter/preset/scene
+      payload: cast
+      then:
+        - if:
+            condition:
+              binary_sensor.is_off: ir_template_tv_power
+            then:
+              #Turn tv on
+              - remote_transmitter.transmit_lg:
+                  data: 0x20DF10EF
+                  nbits: 32
+              - binary_sensor.template.publish:
+                  id: ir_template_tv_power
+                  state: ON
+        - if:
+            condition:
+              binary_sensor.is_off: ir_template_reciever_power
+            then:
+              - delay: 1s
+              #Turn Reciver On
+              - remote_transmitter.transmit_nec:
+                  address: 0x817E
+                  command: 0xD52A
+              - binary_sensor.template.publish:
+                  id: ir_template_reciever_power
+                  state: ON
+              - delay: 1s
+              #Switch to HDMI1 (chrome cast)
+              - remote_transmitter.transmit_nec:
+                  address: 0x857A
+                  command: 0x3847
+              - text_sensor.template.publish:
+                  id: ir_template_reciever_source
+                  state: 'CHROME CAST'
+            else:
+              - delay: 1s
+              #Switch to HDMI1 (chrome cast)
+              - remote_transmitter.transmit_nec:
+                  address: 0x857A
+                  command: 0x3847
+              - text_sensor.template.publish:
+                  id: ir_template_reciever_source
+                  state: 'CHROME CAST'
+    - topic: livingroom/ir_transmitter/preset/scene
+      payload: switch
+      then:
+        - if:
+            condition:
+              binary_sensor.is_off: ir_template_tv_power
+            then:
+              #Turn tv on
+              - remote_transmitter.transmit_lg:
+                  data: 0x20DF10EF
+                  nbits: 32
+              - binary_sensor.template.publish:
+                  id: ir_template_tv_power
+                  state: ON
+        - if:
+            condition:
+              binary_sensor.is_off: ir_template_reciever_power
+            then:
+              - delay: 1s
+              #Turn reciever on
+              - remote_transmitter.transmit_nec:
+                  address: 0x817E
+                  command: 0xD52A
+              - binary_sensor.template.publish:
+                  id: ir_template_reciever_power
+                  state: ON
+              - delay: 1s
+              #Switch to HDMI2 (switch)
+              - remote_transmitter.transmit_nec:
+                  address: 0x857A
+                  command: 0x354A
+              - text_sensor.template.publish:
+                  id: ir_template_reciever_source
+                  state: 'SWITCH'
+            else:
+              - delay: 1s
+              #Switch to HDMI2 (switch)
+              - remote_transmitter.transmit_nec:
+                  address: 0x857A
+                  command: 0x354A
+              - text_sensor.template.publish:
+                  id: ir_template_reciever_source
+                  state: 'SWITCH'
+    - topic: livingroom/ir_transmitter/preset/reciever
+      payload: power
+      then:
+        - remote_transmitter.transmit_nec:
+            address: 0x817E
+            command: 0xD52A
+        - if:
+            condition:
+              binary_sensor.is_on: ir_template_reciever_power
+            then:
+              - binary_sensor.template.publish:
+                  id: ir_template_reciever_power
+                  state: OFF
+            else:
+              - binary_sensor.template.publish:
+                  id: ir_template_reciever_power
+                  state: ON
+    - topic: livingroom/ir_transmitter/preset/reciever
+      payload: power_on
+      then:
+        - if:
+            condition:
+              binary_sensor.is_off: ir_template_reciever_power
+            then:
+              - remote_transmitter.transmit_nec:
+                  address: 0x817E
+                  command: 0xD52A
+              - binary_sensor.template.publish:
+                  id: ir_template_reciever_power
+                  state: ON
+    - topic: livingroom/ir_transmitter/preset/reciever
+      payload: volume_up
+      then:
+        - remote_transmitter.transmit_nec:
+            address: 0x857A
+            command: 0xE51A
+    - topic: livingroom/ir_transmitter/preset/reciever
+      payload: volume_up_press
+      then:
+        - binary_sensor.template.publish:
+            id: ir_template_increasing_volume
+            state: ON
+        - while:
+            condition:
+              binary_sensor.is_on: ir_template_increasing_volume
+            then:
+              - remote_transmitter.transmit_nec:
+                  address: 0x857A
+                  command: 0xE51A
+              - delay: 60ms
+    - topic: livingroom/ir_transmitter/preset/reciever
+      payload: volume_up_release
+      then:
+        - binary_sensor.template.publish:
+            id: ir_template_increasing_volume
+            state: OFF
+    - topic: livingroom/ir_transmitter/preset/reciever
+      payload: volume_down
+      then:
+        - remote_transmitter.transmit_nec:
+            address: 0x857A
+            command: 0xE41B
+    - topic: livingroom/ir_transmitter/preset/reciever
+      payload: volume_down_press
+      then:
+        - binary_sensor.template.publish:
+            id: ir_template_decreasing_volume
+            state: ON
+        - while:
+            condition:
+              binary_sensor.is_on: ir_template_decreasing_volume
+            then:
+              - remote_transmitter.transmit_nec:
+                  address: 0x857A
+                  command: 0xE41B
+              - delay: 60ms
+    - topic: livingroom/ir_transmitter/preset/reciever
+      payload: volume_down_release
+      then:
+        - binary_sensor.template.publish:
+            id: ir_template_decreasing_volume
+            state: OFF
+    - topic: livingroom/ir_transmitter/preset/reciever
+      payload: source_cast
+      then:
+        - remote_transmitter.transmit_nec:
+            address: 0x857A
+            command: 0x3847
+        - text_sensor.template.publish:
+            id: ir_template_reciever_source
+            state: 'CHROME CAST'
+    - topic: livingroom/ir_transmitter/preset/reciever
+      payload: source_switch
+      then:
+        - remote_transmitter.transmit_nec:
+            address: 0x857A
+            command: 0x354A
+        - text_sensor.template.publish:
+            id: ir_template_reciever_source
+            state: 'SWITCH'
+    - topic: livingroom/ir_transmitter/preset/reciever
+      payload: source_tv
+      then:
+        - remote_transmitter.transmit_nec:
+            address: 0x857A
+            command: 0x324D
+        - text_sensor.template.publish:
+            id: ir_template_reciever_source
+            state: 'TV'
+    - topic: livingroom/ir_transmitter/preset/reciever
+      payload: mute
+      then:
+        - remote_transmitter.transmit_nec:
+            address: 0x857A
+            command: 0xE31C
+    - topic: livingroom/ir_transmitter/preset/tv
+      payload: power
+      then:
+        - remote_transmitter.transmit_lg:
+            data: 0x20DF10EF
+            nbits: 32
+        - if:
+            condition:
+              binary_sensor.is_on: ir_template_tv_power
+            then:
+              - binary_sensor.template.publish:
+                  id: ir_template_tv_power
+                  state: OFF
+            else:
+              - binary_sensor.template.publish:
+                  id: ir_template_tv_power
+                  state: ON
+    - topic: livingroom/ir_transmitter/preset/tv
+      payload: ok
+      then:
+        - remote_transmitter.transmit_lg:
+            data: 0x20DF22DD
+            nbits: 32
+    - topic: livingroom/ir_transmitter/preset/tv
+      payload: power_on
+      then:
+        - if:
+            condition:
+              binary_sensor.is_off: ir_template_tv_power
+            then:
+              - remote_transmitter.transmit_lg:
+                  data: 0x20DF10EF
+                  nbits: 32
+              - binary_sensor.template.publish:
+                  id: ir_template_tv_power
+                  state: ON
+    - topic: livingroom/ir_transmitter/preset/box
+      payload: power
+      then:
+        - remote_transmitter.transmit_raw:
+            carrier_frequency: 38kHz
+            code: [411, -278, 118, -321, 118, -651, 120, -321, 118, -652, 118, -818, 119, -817, 120, -319, 120, -321, 118, -322, 118, -651, 119, -487, 119, -818, 119, -320, 119, -322, 118, -816, 121, -319, 120]
+        - if:
+            condition:
+              binary_sensor.is_on: ir_template_box_power
+            then:
+              - binary_sensor.template.publish:
+                  id: ir_template_box_power
+                  state: OFF
+            else:
+              - binary_sensor.template.publish:
+                  id: ir_template_box_power
+                  state: ON
+    - topic: livingroom/ir_transmitter/preset/box
+      payload: power_on
+      then:
+        - if:
+            condition:
+              binary_sensor.is_off: ir_template_box_power
+            then:
+              - remote_transmitter.transmit_raw:
+                  carrier_frequency: 38kHz
+                  code: [411, -278, 118, -321, 118, -651, 120, -321, 118, -652, 118, -818, 119, -817, 120, -319, 120, -321, 118, -322, 118, -651, 119, -487, 119, -818, 119, -320, 119, -322, 118, -816, 121, -319, 120]
+              - binary_sensor.template.publish:
+                  id: ir_template_box_power
+                  state: ON
+    - topic: livingroom/ir_transmitter/preset/box
+      payload: up
+      then:
+        - remote_transmitter.transmit_raw:
+            carrier_frequency: 38kHz
+            code: [458, -198, 195, -280, 158, -611, 160, -280, 159, -611, 160, -779, 161, -773, 160, -279, 160, -281, 159, -280, 159, -611, 159, -447, 159, -777, 160, -447, 159, -447, 159, -611, 160, -279, 160]
+    - topic: livingroom/ir_transmitter/preset/box
+      payload: right
+      then:
+        - remote_transmitter.transmit_raw:
+            carrier_frequency: 38kHz
+            code: [376, -313, 150, -289, 117, -653, 117, -323, 150, -620, 155, -782, 151, -784, 118, -323, 151, -289, 150, -289, 115, -655, 151, -455, 151, -785, 151, -455, 151, -456, 153, -617, 151, -785, 152]
+    - topic: livingroom/ir_transmitter/preset/box
+      payload: down
+      then:
+        - remote_transmitter.transmit_raw:
+            carrier_frequency: 38kHz
+            code: [452, -216, 214, -243, 197, -578, 192, -245, 195, -578, 192, -744, 193, -743, 193, -244, 196, -243, 197, -241, 167, -609, 192, -414, 192, -744, 193, -413, 193, -413, 193, -577, 195, -411, 192]
+    - topic: livingroom/ir_transmitter/preset/box
+      payload: left
+      then:
+        - remote_transmitter.transmit_raw:
+            carrier_frequency: 38kHz
+            code: [452, -216, 215, -242, 198, -577, 193, -242, 198, -577, 193, -742, 195, -742, 194, -240, 200, -240, 199, -240, 195, -582, 193, -413, 197, -739, 193, -413, 166, -440, 193, -577, 193, -577, 194]
+    - topic: livingroom/ir_transmitter/preset/box
+      payload: ok
+      then:
+        - remote_transmitter.transmit_raw:
+            carrier_frequency: 38kHz
+            code: [386, -304, 118, -322, 117, -652, 118, -322, 118, -652, 118, -818, 119, -817, 120, -320, 119, -322, 117, -322, 117, -653, 118, -488, 118, -818, 119, -487, 119, -487, 119, -817, 119, -321, 119]
+    - topic: livingroom/ir_transmitter/preset/box
+      payload: wake
+      then:
+        - remote_transmitter.transmit_raw:
+            carrier_frequency: 38kHz
+            code: [386, -304, 118, -322, 117, -652, 118, -322, 118, -652, 118, -818, 119, -817, 120, -320, 119, -322, 117, -322, 117, -653, 118, -488, 118, -818, 119, -487, 119, -487, 119, -817, 119, -321, 119]
+        - delay: 0.5s
+        - remote_transmitter.transmit_raw:
+            carrier_frequency: 38kHz
+            code: [386, -304, 118, -322, 117, -652, 118, -322, 118, -652, 118, -818, 119, -817, 120, -320, 119, -322, 117, -322, 117, -653, 118, -488, 118, -818, 119, -487, 119, -487, 119, -817, 119, -321, 119]
+        - delay: 0.5s
+        - remote_transmitter.transmit_raw:
+            carrier_frequency: 38kHz
+            code: [386, -304, 118, -322, 117, -652, 118, -322, 118, -652, 118, -818, 119, -817, 120, -320, 119, -322, 117, -322, 117, -653, 118, -488, 118, -818, 119, -487, 119, -487, 119, -817, 119, -321, 119]
+    - topic: livingroom/ir_transmitter/preset/box
+      payload: menu
+      then:
+        - remote_transmitter.transmit_raw:
+            carrier_frequency: 38kHz
+            code: [415, -276, 120, -318, 121, -649, 121, -319, 121, -648, 122, -814, 156, -781, 155, -285, 122, -318, 121, -318, 155, -615, 122, -485, 155, -781, 155, -781, 155, -285, 122, -839, 124, -291, 122]
+    - topic: livingroom/ir_transmitter/preset/box
+      payload: back
+      then:
+        - remote_transmitter.transmit_raw:
+            carrier_frequency: 38kHz
+            code: [447, -231, 174, -280, 160, -607, 163, -277, 162, -608, 162, -775, 162, -774, 163, -277, 162, -278, 162, -277, 163, -607, 163, -443, 163, -773, 164, -443, 163, -773, 162, -278, 162, -444, 163]
+  on_json_message:
+    - topic: livingroom/ir_transmitter/nec
+      then:
+        - remote_transmitter.transmit_nec:
+            address: !lambda |-
+              int address = 0;
+              if (x.containsKey("address")) {
+                address = x["address"];
+              }
+              ESP_LOGD("mqtt-ir-trigger", "NEC address: %d", address);
+              return address;
+            command: !lambda |-
+              int command = 0;
+              if (x.containsKey("command")) {
+                command = x["command"];
+              }
+              ESP_LOGD("mqtt-ir-trigger", "NEC command: %d", command);
+              return command;
